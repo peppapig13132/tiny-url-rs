@@ -41,8 +41,13 @@
 
 #![allow(unused_variables, dead_code)]
 
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+use crate::commands::CommandHandler;
+use crate::queries::QueryHandler;
+
 /// All possible errors of the [`UrlShortenerService`].
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ShortenerError {
     /// This error occurs when an invalid [`Url`] is provided for shortening.
     InvalidUrl,
@@ -58,7 +63,7 @@ pub enum ShortenerError {
 
 /// A unique string (or alias) that represents the shortened version of the
 /// URL.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Slug(pub String);
 
 /// The original URL that the short link points to.
@@ -131,12 +136,26 @@ pub mod queries {
 /// CQRS and Event Sourcing-based service implementation
 pub struct UrlShortenerService {
     // TODO: add needed fields
+    links: HashMap<Slug, (ShortLink, u64)>, // Stores the ShortLink and the count of redirects
 }
 
 impl UrlShortenerService {
     /// Creates a new instance of the service
     pub fn new() -> Self {
-        Self {}
+        Self {
+            links: HashMap::new(),
+        }
+    }
+    
+    /// Generates a random slug (basic version)
+    fn generate_random_slug() -> Slug {
+        use rand::{distributions::Alphanumeric, Rng}; // Ensure import is in the function scope
+        let slug: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(6) // Adjust the length as needed
+            .map(char::from)
+            .collect();
+        Slug(slug)
     }
 }
 
@@ -146,19 +165,82 @@ impl commands::CommandHandler for UrlShortenerService {
         url: Url,
         slug: Option<Slug>,
     ) -> Result<ShortLink, ShortenerError> {
-        todo!("Implement the logic for creating a short link")
+        // todo!("Implement the logic for creating a short link")
+
+        let slug = match slug {
+            Some(s) => s,
+            None => Self::generate_random_slug(),
+        };
+
+        // Check if the slug already exists
+        match self.links.entry(slug.clone()) {
+            Entry::Occupied(_) => Err(ShortenerError::SlugAlreadyInUse),
+            Entry::Vacant(entry) => {
+                let short_link = ShortLink {
+                    slug: slug.clone(),
+                    url: url.clone(),
+                };
+                entry.insert((short_link.clone(), 0)); // Insert the link with initial redirect count of 0
+                Ok(short_link)
+            }
+        }
     }
 
     fn handle_redirect(
         &mut self,
         slug: Slug,
     ) -> Result<ShortLink, ShortenerError> {
-        todo!("Implement the logic for redirection and incrementing the click counter")
+        // todo!("Implement the logic for redirection and incrementing the click counter")
+
+        match self.links.get_mut(&slug) {
+            Some((link, redirects)) => {
+                *redirects += 1;
+                Ok(link.clone())
+            }
+            None => Err(ShortenerError::SlugNotFound),
+        }
     }
 }
 
 impl queries::QueryHandler for UrlShortenerService {
     fn get_stats(&self, slug: Slug) -> Result<Stats, ShortenerError> {
-        todo!("Implement the logic for retrieving link statistics")
+        // todo!("Implement the logic for retrieving link statistics")
+
+        match self.links.get(&slug) {
+            Some((link, redirects)) => Ok(Stats {
+                link: link.clone(),
+                redirects: *redirects,
+            }),
+            None => Err(ShortenerError::SlugNotFound),
+        }
     }
+}
+
+
+
+
+fn main() {
+    let mut service = UrlShortenerService::new();
+
+    // Create a short link with a random slug
+    let url = Url("https://original-url.com".to_string());
+    let short_link = service
+        .handle_create_short_link(url.clone(), None)
+        .expect("Failed to create short link");
+
+    // Create a short link with a predefined slug
+    let slug = Slug("custom.xyz".to_string());
+    let custom_link = service
+        .handle_create_short_link(url.clone(), Some(slug.clone()))
+        .expect("Failed to create short link with custom slug");
+
+    // Redirect using a slug
+    let redirected_link = service
+        .handle_redirect(slug.clone())
+        .expect("Failed to redirect using the slug");
+
+    // Get stats for the link
+    let stats = service.get_stats(slug.clone()).expect("Failed to get stats");
+
+    println!("Stats: {:?}", stats);
 }
