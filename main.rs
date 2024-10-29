@@ -116,6 +116,13 @@ pub mod commands {
             &mut self,
             slug: Slug,
         ) -> Result<ShortLink, ShortenerError>;
+
+        /// Changes the URL of a [`ShortLink`] with a provided [`Slug`].
+        fn handle_change_short_link(
+            &mut self,
+            slug: Slug,
+            new_url: Url,
+        ) -> Result<ShortLink, ShortenerError>;
     }
 }
 
@@ -191,10 +198,24 @@ impl commands::CommandHandler for UrlShortenerService {
         slug: Slug,
     ) -> Result<ShortLink, ShortenerError> {
         // todo!("Implement the logic for redirection and incrementing the click counter")
-
+        
         match self.links.get_mut(&slug) {
             Some((link, redirects)) => {
                 *redirects += 1;
+                Ok(link.clone())
+            }
+            None => Err(ShortenerError::SlugNotFound),
+        }
+    }
+
+    fn handle_change_short_link(
+        &mut self,
+        slug: Slug,
+        new_url: Url,
+    ) -> Result<ShortLink, ShortenerError> {
+        match self.links.get_mut(&slug) {
+            Some((link, _)) => {
+                link.url = new_url.clone();
                 Ok(link.clone())
             }
             None => Err(ShortenerError::SlugNotFound),
@@ -233,6 +254,12 @@ fn main() {
     let custom_link = service
         .handle_create_short_link(url.clone(), Some(slug.clone()))
         .expect("Failed to create short link with custom slug");
+
+    // Change the URL for an existing short link
+    let new_url = Url("https://new-original-url.com".to_string());
+    let updated_link = service
+        .handle_change_short_link(slug.clone(), new_url.clone())
+        .expect("Failed to change the URL for the short link");
 
     // Redirect using a slug
     let redirected_link = service
